@@ -1,7 +1,4 @@
 function varargout = PsychoacousticTraining(varargin)
-%% OBS! I had to resort to hard coding some extra parameters so that the 
-%  software can be readily used with different sound cards: line 81
-%
 % PSYCHOACOUSTICTRAINING MATLAB code for PsychoacousticTraining.fig
 %      PSYCHOACOUSTICTRAINING, by itself, creates a new PSYCHOACOUSTICTRAINING or raises the existing
 %      singleton*.
@@ -46,9 +43,7 @@ else
 end
 % End initialization code - DO NOT EDIT
 
-% addpath('..\TransposedIADs');
-addpath('..\NoisySAM');
-addpath('..\Berniotis');
+addpath('..\TransposedIADs');
 
 % --- Executes just before PsychoacousticTraining is made visible.
 function PsychoacousticTraining_OpeningFcn(hObject, eventdata, handles, varargin)
@@ -76,11 +71,6 @@ set(handles.Level,'String',levels(1));
 handles.level=str2double(levels(1));
 handles.numExamples=str2double(get(handles.nExamples,'String'));
 handles.numTests=str2double(get(handles.nTests,'String'));
-
-%% OBS! Hard coding of any extra args that need to be passed
-% handles.ExtraArgsArray = {'usePlayrec', 0, 'RMEslider', 'FALSE','preSilence', 00};
-handles.ExtraArgsArray = {'usePlayrec', 1, 'RMEslider', 'TRUE','preSilence', 0};
-
 
 % Update handles structure
 guidata(hObject, handles);
@@ -151,30 +141,49 @@ order=[];
 while length(order)<handles.numExamples
     order=[order randperm(3)];
 end
-%% now to the task-specific sections -- set up structure with all the necessary information
-% function p=SetUpStructure(task, ExtraArgsArray, level)
-p=SetUpStructure(handles.task, handles.ExtraArgsArray, handles.level);
-
-%% Set RME Slider if necessary -- appropriate for all tasks
-% function RMEsliderForTraining(p, task);
-RMEsliderForTraining(p, handles.task)
-
-for i= 1:handles.numExamples
-    p.Order=order(i);
-    %% generate the appropriate sounds
-    % function [w, wInQuiet, wUntransposed] = GenerateTheTriple(task, p)
-    [w, wInQuiet, wUntransposed] = GenerateTheTriple(handles.task, 'Ex', p);
-    InfoToDisplay= sprintf('Interval %d is the ''odd one out''',p.Order);
-    % function [response,p] = PlayAndReturnResponse3I3AFC(Wave2Play,trial,p)
-    responseGUI = PlayAndReturnNoResponse3I3AFC(w,p,InfoToDisplay,order(i));
-    % function responseGUI = PlayAndReturnNoResponse3I3AFC(Wave2Play,p,InfoToDisplay,correct)
-end
-delete(responseGUI);
-if p.usePlayrec==1
-    if playrec('isInitialised')
-        playrec('reset');
+%% now to the task-specific sections
+if strcmp(handles.task, 'TransposedITDs') ||  strcmp(handles.task, 'TransposedILDs')
+    IAD = handles.task(11:13);
+    if strcmp(IAD, 'ITD')
+        starting_SNR=20*log10(handles.level/100);
+    else
+        starting_SNR=handles.level;
     end
+    % set up necessary parameters
+    p=TransposedIADsParseArgs('XX', 'usePlayrec', 0, ......
+        'outputAllWavs', 1, ...
+        'starting_SNR',starting_SNR , 'IAD', IAD);
+    %% Set RME Slider if necessary
+    if strcmp(p.RMEslider,'TRUE')
+        if strcmp(handles.task, 'TransposedITDs') ||  strcmp(handles.task, 'TransposedILDs')
+            RMEsettingsFile=fullfile('..\TransposedIADs', 'RMEsettings.csv');
+        else
+            RMEsettingsFile=fullfile(['..\' handles.task], 'RMEsettings.csv');
+        end
+        PrepareRMEslider(RMEsettingsFile,p.dBSPL);
+    end
+    for i= 1:handles.numExamples
+        p.Order=order(i);
+        %% generate the appropriate sounds
+        [w, wInQuiet, wUntransposed]=GenerateIADtriple(p);
+        %% ensure no overload
+        % function [OutWave, flag] = NoClipStereo(InWave,message)
+        [w, flag] = NoClipStereo(w);
+        if p.outputAllWavs
+            [wInQuiet, flag] = NoClipStereo(wInQuiet);
+            audiowrite(fullfile(sprintf('Ex-o%d.wav', p.Order)),w,p.SampFreq);
+            audiowrite(fullfile(sprintf('ExQT-o%d.wav', p.Order)),wInQuiet,p.SampFreq);
+        end
+        InfoToDisplay= sprintf('Interval %d is the ''odd one out''',p.Order);
+        % function [response,p] = PlayAndReturnResponse3I3AFC(Wave2Play,trial,p)
+        responseGUI = PlayAndReturnNoResponse3I3AFC(w,p,InfoToDisplay,order(i));
+        % function responseGUI = PlayAndReturnNoResponse3I3AFC(Wave2Play,p,InfoToDisplay,correct)
+    end
+    delete(responseGUI);
+else
+    error('Not yet implemented');
 end
+
 
 % --- Executes on button press in TestExamples.
 function TestExamples_Callback(hObject, eventdata, handles)
@@ -186,40 +195,58 @@ order=[];
 while length(order)<handles.numTests
     order=[order randperm(3)];
 end
-%% now to the task-specific sections -- set up structure with all the necessary information
-% function p=SetUpStructure(task, ExtraArgsArray, level)
-p=SetUpStructure(handles.task, handles.ExtraArgsArray, handles.level);
-
-%% Set RME Slider if necessary -- appropriate for all tasks
-% function RMEsliderForTraining(p, task);
-RMEsliderForTraining(p, handles.task)
-
-correct=0;
-GoOrMessageButton('String', 'none')
-pause(1)
-for i= 1:handles.numTests
-    p.Order=order(i);
-    %% generate the appropriate sounds
-    % function [w, wInQuiet, wUntransposed] = GenerateTheTriple(task, p)
-    [w, wInQuiet, wUntransposed] = GenerateTheTriple(handles.task, 'Tst', p);
-    InfoToDisplay= sprintf('Now you try',p.Order);
-    %  function [response,p] = PlayAndReturnResponse3I3AFC(Wave2Play,trial,p,InfoToDisplay)
-    %         if i==1
-    %             [response,p] = PlayAndReturnResponse3I3AFC(w,0,p,InfoToDisplay);
-    %         end
-    [response,p] = PlayAndReturnResponse3I3AFC(w,i,p,InfoToDisplay);
-    if p.Order==response
-        correct=correct+1;
+%% now to the task-specific sections
+if strcmp(handles.task, 'TransposedITDs') ||  strcmp(handles.task, 'TransposedILDs')
+    IAD = handles.task(11:13);
+    if strcmp(IAD, 'ITD')
+        starting_SNR=20*log10(handles.level/100);
+    else
+        starting_SNR=handles.level;
     end
-    % function responseGUI = PlayAndReturnNoResponse3I3AFC(Wave2Play,p,InfoToDisplay,correct)
-end
-delete(p.responseGUI);
-FeedbackTestResults(0, sprintf('You got %d/%d correct = %5.1f%%',correct,handles.numTests,100*correct/handles.numTests));
-if p.usePlayrec==1
-    if playrec('isInitialised')
-        playrec('reset');
+    % set up necessary parameters
+    p=TransposedIADsParseArgs('XX', 'outputAllWavs', 1, ...
+        'starting_SNR',starting_SNR , 'IAD', IAD);
+    if strcmp(p.RMEslider,'TRUE')
+        if strcmp(handles.task, 'TransposedITDs') ||  strcmp(handles.task, 'TransposedILDs')
+            RMEsettingsFile=fullfile('..\TransposedIADs', 'RMEsettings.csv');
+        else
+            RMEsettingsFile=fullfile(['..\' handles.task], 'RMEsettings.csv');
+        end
+        PrepareRMEslider(RMEsettingsFile,p.dBSPL);
     end
+    correct=0;
+    GoOrMessageButton('String', 'none')
+    pause(1)
+    for i= 1:handles.numTests
+        p.Order=order(i);
+        %% generate the appropriate sounds
+        [w, wInQuiet, wUntransposed]=GenerateIADtriple(p);
+        %% ensure no overload
+        % function [OutWave, flag] = NoClipStereo(InWave,message)
+        [w, flag] = NoClipStereo(w);
+        if p.outputAllWavs
+            [wInQuiet, flag] = NoClipStereo(wInQuiet);
+            audiowrite(fullfile(sprintf('Tst-o%d.wav', p.Order)),w,p.SampFreq);
+            audiowrite(fullfile(sprintf('TstQT-o%d.wav', p.Order)),wInQuiet,p.SampFreq);
+        end
+        InfoToDisplay= sprintf('Now you try',p.Order);
+        %  function [response,p] = PlayAndReturnResponse3I3AFC(Wave2Play,trial,p,InfoToDisplay)
+%         if i==1
+%             [response,p] = PlayAndReturnResponse3I3AFC(w,0,p,InfoToDisplay);
+%         end
+        [response,p] = PlayAndReturnResponse3I3AFC(w,i,p,InfoToDisplay);
+        if p.Order==response
+            correct=correct+1;
+        end
+        % function responseGUI = PlayAndReturnNoResponse3I3AFC(Wave2Play,p,InfoToDisplay,correct)
+    end
+    delete(p.responseGUI);
+    FeedbackTestResults(0, sprintf('You got %d/%d correct = %5.1f%%',correct,handles.numTests,100*correct/handles.numTests));
+else
+    error('Not yet implemented');
 end
+
+
 
 function nExamples_Callback(hObject, eventdata, handles)
 % hObject    handle to nExamples (see GCBO)
