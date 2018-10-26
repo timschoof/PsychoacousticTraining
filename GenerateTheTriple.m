@@ -4,7 +4,7 @@ if strcmp(task, 'TransposedITDs') ||  strcmp(task, 'TransposedILDs')
     [w, wInQuiet, wUntransposed]=GenerateIADtriple(p);
 elseif strcmp(task, 'NoisySAM')
     [w, wInQuiet, wUntransposed]=GenerateSAMtriple(p);
-elseif strcmp(task, 'Berniotis')
+elseif strcmp(task, 'Berniotis') || strcmp(task, 'LoBerniotis')
     [w, wInQuiet, wUntransposed]=GenerateSxNxTonalTriple(p);
 end
 %% ensure no overload
